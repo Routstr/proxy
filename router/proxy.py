@@ -189,10 +189,17 @@ async def proxy(
                         key, response_json, session
                     )
                     response_json["cost"] = cost_data
+
+                    response_headers = dict(response.headers)
+
+                    # Remove Transfer-Encoding header to avoid conflict with Content-Length header in common nginx setups
+                    if "transfer-encoding" in response_headers:
+                        del response_headers["transfer-encoding"]
+
                     return Response(
                         content=json.dumps(response_json).encode(),
                         status_code=response.status_code,
-                        headers=dict(response.headers),
+                        headers=response_headers,
                         media_type="application/json",
                     )
                 except json.JSONDecodeError as e:
