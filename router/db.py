@@ -21,6 +21,10 @@ class ApiKey(SQLModel, table=True):  # type: ignore
         default=None,
         description="Lightning address to refund remaining balance after key expires",
     )
+    key_expiry_time: int | None = Field(
+        default=None,
+        description="Unix-timestamp after which the cashu-token's balance gets refunded to the refund_address",
+    )
     total_spent: int = Field(
         default=0, description="Total spent in millisatoshis (msats)"
     )

@@ -1,15 +1,18 @@
 import os
 import httpx
+import asyncio
+import time
 
 from cashu.core.base import Token  # type: ignore
 from cashu.wallet.wallet import Wallet  # type: ignore
 from cashu.wallet.helpers import deserialize_token_from_string, receive  # type: ignore
 from sqlmodel import select, func, col
-from .db import ApiKey, AsyncSession
+from .db import ApiKey, AsyncSession, get_session
 
 RECEIVE_LN_ADDRESS = os.environ["RECEIVE_LN_ADDRESS"]
 MINT = os.environ.get("MINT", "https://mint.minibits.cash/Bitcoin")
 MINIMUM_PAYOUT = int(os.environ.get("MINIMUM_PAYOUT", 100))
+REFUND_PROCESSING_INTERVAL = int(os.environ.get("REFUND_PROCESSING_INTERVAL", 3600))
 DEV_LN_ADDRESS = "routstr@minibits.cash"
 DEVS_DONATION_RATE = 0.021  # 2.1%
 WALLET = None
@@ -79,7 +82,9 @@ async def _pay_invoice_with_cashu(
     proofs_to_melt, _ = await wallet.select_to_send(
         wallet.proofs, quote.amount + quote.fee_reserve
     )
-    print(f"Proofs to melt: {proofs_to_melt}")
+    
+    # Debugging Cashu Proofs
+    #print(f"Proofs to melt: {proofs_to_melt}")
 
     _ = await wallet.melt(
         proofs_to_melt, bolt11_invoice, quote.fee_reserve, quote.quote
@@ -150,14 +155,67 @@ async def pay_out(session: AsyncSession) -> None:
 async def credit_balance(cashu_token: str, key: ApiKey, session: AsyncSession) -> int:
     token_obj: Token = deserialize_token_from_string(cashu_token)
     wallet: Wallet = await _initialize_wallet(token_obj.mint)
-    amount_msats = await _handle_token_receive(wallet, token_obj)
-    key.balance += amount_msats
-    session.add(key)
-    await session.commit()
-    return amount_msats
+    if token_obj.mint == MINT:
+        # crediting a token created using the same mint as specified in .env
+        print("Received a token from the same mint", flush=True)
+
+        amount_msats = await _handle_token_receive(wallet, token_obj)
+        key.balance += amount_msats
+        session.add(key)
+        await session.commit()
+        return amount_msats
+    else: 
+        # crediting a token created using a different mint as specified in .env
+        print("Received a token from a different mint", flush=True)
+        #TODO This fails, and needs to be fixed 
+
+
+async def check_for_refunds() -> None:
+    """
+    Periodically checks for API keys that are eligible for refunds and processes them.
+
+    Raises:
+        Exception: If an error occurs during the refund check process.
+    """
+
+    # Setting REFUND_PROCESSING_INTERVAL to 0 disables it
+    if REFUND_PROCESSING_INTERVAL == 0:
+        print("Automatic refund processing is disabled.")
+        return
+
+    while True:
+        try:
+            async for session in get_session():
+                result = await session.exec(select(ApiKey))
+                keys = result.all()
+                current_time = int(time.time())
+                for key in keys:
+                    if(key.balance > 0 and key.refund_address and key.key_expiry_time and key.key_expiry_time < current_time):
+                        print(f"       DEBUG   Refunding key {key.hashed_key[:3] + '[...]' + key.hashed_key[-3:]}, Current Time: {current_time}, Expirary Time: {key.key_expiry_time}", flush = True)
+                        await refund_balance(key.balance, key, session)
+                        
+            # Sleep for the specified interval before checking again
+            await asyncio.sleep(REFUND_PROCESSING_INTERVAL) 
+        except Exception as e:
+            print(f"Error during refund check: {e}")
+        
 
 
 async def refund_balance(amount: int, key: ApiKey, session: AsyncSession) -> int:
+    """
+    Refunds the specified amount from an API key's balance to the key's refund address.
+
+    Args:
+        amount (int): The amount to refund in millisatoshis.
+        key (ApiKey): The API key object containing balance and refund address.
+        session (AsyncSession): The database session for committing changes.
+
+    Returns:
+        int:  The amount in millisatoshis that was successfully sent.
+
+    Raises:
+        ValueError: If balance is insufficient or refund address is not set.
+    """
     wallet = await _initialize_wallet()
     if key.balance < amount:
         raise ValueError("Insufficient balance.")
@@ -168,8 +226,7 @@ async def refund_balance(amount: int, key: ApiKey, session: AsyncSession) -> int
     await session.commit()
     if key.refund_address is None:
         raise ValueError("Refund address not set.")
-    return await send_to_lnurl(wallet, key.refund_address, amount_msat=amount) #Todo: Check possible msats / sats conversion error?
-
+    return await send_to_lnurl(wallet, key.refund_address, amount_msat=amount)
 
 async def create_token(
     amount_msats: int, mint: str = MINT
@@ -240,20 +297,21 @@ async def send_to_lnurl(wallet: Wallet, lnurl: str, amount_msat: int) -> int:
             f"({min_sendable / 1000} - {max_sendable / 1000} sat)."
         )
     # subtract estimated fees
+    # TODO: Is a static fee calculation working well? 
+    # moving the 2000 and 0.01 to optional enviroment variables might give more control to users
     amount_to_send = amount_msat - int(max(2000, amount_msat * 0.01))
 
+    print(f"       DEBUG   Trying to pay {amount_to_send} msats to {lnurl}, with Wallet balance = {wallet.balance}", flush = True)
 
-    print(f"trying to pay {amount_to_send} msats to {lnurl}. Available balance: {wallet.balance}", flush=True)
     # Note: We pass amount_msat directly. The actual amount paid might be adjusted
     # slightly by the melt quote based on the invoice details.
     bolt11_invoice, _ = await _get_lnurl_invoice(callback_url, amount_to_send)
 
-    # Conversion to Sats (/ 1000 necessary for cashu payments)
+    # Conversion to Sats (/ 1000) necessary for cashu payments
     amount_paid = await _pay_invoice_with_cashu(wallet, bolt11_invoice, amount_to_send / 1000)
 
-    print(f"{amount_paid} sats paid to lnurl", flush=True)
+    print(f"       DEBUG   {amount_paid} sats paid to lnurl", flush=True)
 
-    print(f"Amount paid: {amount_paid / 1000} sat")
     return amount_paid
 
 

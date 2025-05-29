@@ -2,6 +2,8 @@ import asyncio
 import hashlib
 import os
 import json
+from typing import Optional
+
 
 from fastapi import HTTPException, Request
 
@@ -21,7 +23,7 @@ COST_PER_1K_OUTPUT_TOKENS = (
 MODEL_BASED_PRICING = os.environ.get("MODEL_BASED_PRICING", "false").lower() == "true"
 
 
-async def validate_bearer_key(bearer_key: str, session: AsyncSession) -> ApiKey:
+async def validate_bearer_key(bearer_key: str, session: AsyncSession, refund_address: Optional[str] = None, key_expiry_time: Optional[int] = None) -> ApiKey:
     """
     Validates the provided API key using SQLModel.
     If it's a cashu key, it redeems it and stores its hash and balance.
@@ -40,15 +42,18 @@ async def validate_bearer_key(bearer_key: str, session: AsyncSession) -> ApiKey:
         )
 
     if bearer_key.startswith("sk-"):
-        if exsisting_key := await session.get(ApiKey, bearer_key[3:]):
-            return exsisting_key
+        if existing_key := await session.get(ApiKey, bearer_key[3:]):
+            existing_key.key_expiry_time, existing_key.refund_address = key_expiry_time, refund_address 
+            return existing_key
 
     if bearer_key.startswith("cashu"):
         try:
             hashed_key = hashlib.sha256(bearer_key.encode()).hexdigest()
-            if exsisting_key := await session.get(ApiKey, hashed_key):
-                return exsisting_key
-            new_key = ApiKey(hashed_key=hashed_key, balance=0)
+            if existing_key := await session.get(ApiKey, hashed_key):
+                existing_key.key_expiry_time, existing_key.refund_address = key_expiry_time, refund_address
+                return existing_key
+            
+            new_key = ApiKey(hashed_key=hashed_key, balance=0, refund_address = refund_address, key_expiry_time = key_expiry_time)
             await credit_balance(bearer_key, new_key, session) #TODO: see cashu.py "_initialize_wallet"
             await session.refresh(new_key)
             return new_key

@@ -25,8 +25,27 @@ async def proxy(
 ):
     auth = request.headers.get("Authorization", "")
     bearer_key = auth.replace("Bearer ", "") if auth.startswith("Bearer ") else ""
+    refund_address = request.headers.get("Refund-LNURL", None)
+    key_expiry_time = request.headers.get("Key-Expiry-Time", None)
 
-    key = await validate_bearer_key(bearer_key, session)
+    # Validate key_expiry_time header
+    if key_expiry_time:
+        try:
+            key_expiry_time = int(key_expiry_time)
+        except ValueError:
+            return Response(
+                content="Invalid Key-Expiry-Time: must be a valid Unix timestamp",
+                status_code=400,
+            )
+        if(not refund_address):
+            return Response(
+                content=f"Error: Refund-LNURL header required when using Key-Expiry-Time",
+                status_code=400,
+            )
+    else:
+        key_expiry_time = None
+    
+    key = await validate_bearer_key(bearer_key, session, refund_address, key_expiry_time)
     
     # Pre-validate JSON for requests that require it
     request_body = None
@@ -67,6 +86,8 @@ async def proxy(
     headers = dict(request.headers)
     headers.pop("host", None)
     headers.pop("content-length", None)
+    headers.pop("refund-lnurl", None)
+    headers.pop("key-expiry-time", None)
 
     if UPSTREAM_API_KEY:
         headers["Authorization"] = f"Bearer {UPSTREAM_API_KEY}"
@@ -172,7 +193,6 @@ async def proxy(
                 background_tasks = BackgroundTasks()
                 background_tasks.add_task(response.aclose)
                 background_tasks.add_task(client.aclose)
-
                 return StreamingResponse(
                     stream_with_cost(),
                     status_code=response.status_code,
