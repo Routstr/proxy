@@ -71,8 +71,10 @@ async def validate_bearer_key(
                 key_expiry_time=key_expiry_time,
             )
             await credit_balance(
-                bearer_key, new_key, session
-            )  # TODO: see cashu.py "_initialize_wallet"
+                bearer_key,
+                new_key,
+                session,
+            )
             await session.refresh(new_key)
             return new_key
         except Exception as e:

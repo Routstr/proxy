@@ -25,6 +25,8 @@ async def close_wallet():
     global WALLET
     await WALLET.aclose()
 
+
+
 async def pay_out() -> None:
     """
     Calculates the pay-out amount based on the spent balance, profit, and donation rate.
