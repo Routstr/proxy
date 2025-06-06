@@ -113,6 +113,8 @@ async def check_for_refunds() -> None:
 
             # Sleep for the specified interval before checking again
             await asyncio.sleep(REFUND_PROCESSING_INTERVAL)
+        except asyncio.CancelledError:
+            break
         except Exception as e:
             print(f"Error during refund check: {e}")
 

@@ -67,6 +67,11 @@ async def update_sats_pricing() -> None:
                     w = model.sats_pricing.web_search * 1000
                     ir = model.sats_pricing.internal_reasoning * 100
                     model.sats_pricing.max_cost = p + c + r + i + w + ir
+        except asyncio.CancelledError:
+            break
         except Exception as e:
             print('Error updating sats pricing: ', e)
-        await asyncio.sleep(10)
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            break
