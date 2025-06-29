@@ -21,7 +21,7 @@ WALLET: Wallet | None = None
 
 async def init_wallet() -> None:
     global WALLET
-    WALLET = await Wallet.create(nsec=NSEC)
+    WALLET = await Wallet.create(nsec=NSEC, mint_urls=[MINT], currency="msat")
 
 
 def wallet() -> Wallet:
@@ -95,16 +95,16 @@ async def periodic_payout() -> None:
 async def credit_balance(cashu_token: str, key: ApiKey, session: AsyncSession) -> int:
     """Redeem a Cashu token and credit the amount to the API key balance."""
     try:
-        amount_sats, _ = await wallet().redeem(cashu_token)
+        amount, unit = await WALLET.redeem(cashu_token)
     except Exception as e:
         print(f"Error in credit_balance: {e}")
         # Ensure the balance cannot become negative if redeem fails
         return 0
 
-    if amount_sats <= 0:
+    if amount <= 0:
         return 0
 
-    amount_msats = amount_sats * 1000
+    amount_msats = amount * 1000 if unit == "sat" else amount
 
     # Apply the balance change atomically to avoid race conditions when topping
     # up the same key concurrently.
