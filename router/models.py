@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 from fastapi import APIRouter
-from pydantic.v1 import BaseModel
+from pydantic import BaseModel
 
 from .price import sats_usd_ask_price
 
@@ -87,7 +87,10 @@ async def update_sats_pricing() -> None:
             sats_to_usd = await sats_usd_ask_price()
             for model in MODELS:
                 model.sats_pricing = Pricing(
-                    **{k: v / sats_to_usd for k, v in model.pricing.dict().items()}
+                    **{
+                        k: v / sats_to_usd
+                        for k, v in model.pricing.model_dump().items()
+                    }
                 )
                 if model.top_provider:
                     if (

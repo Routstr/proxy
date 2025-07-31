@@ -218,7 +218,8 @@ async def credit_balance(cashu_token: str, key: ApiKey, session: AsyncSession) -
                 else cashu_token,
             },
         )
-        return 0
+        # Re-raise the exception so the caller can handle invalid tokens properly
+        raise ValueError(f"Token redemption failed: {str(e)}")
 
     if amount <= 0:
         logger.warning(
