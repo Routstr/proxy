@@ -30,8 +30,6 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
         await init_db()
         logger.info("Database initialized successfully")
 
-        logger.info("Wallet initialized successfully")
-
         pricing_task = asyncio.create_task(update_sats_pricing())
         refund_task = asyncio.create_task(check_for_refunds())
         payout_task = asyncio.create_task(periodic_payout())
@@ -85,11 +83,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-logger.info(
-    "CORS middleware configured",
-    extra={"allowed_origins": os.environ.get("CORS_ORIGINS", "*").split(",")},
-)
-
 
 @app.get("/")
 async def info() -> dict:
@@ -99,7 +92,7 @@ async def info() -> dict:
         "description": app.description,
         "version": __version__,
         "npub": os.environ.get("NPUB", ""),
-        "mint": os.environ.get("MINT", ""),
+        "mints": os.environ.get("CASHU_MINTS", "").split(","),
         "http_url": os.environ.get("HTTP_URL", ""),
         "onion_url": os.environ.get("ONION_URL", ""),
         "models": MODELS,
