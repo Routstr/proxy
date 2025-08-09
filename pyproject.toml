@@ -11,6 +11,7 @@ dependencies = [
     "sqlmodel>=0.0.24",
     "httpx[socks]>=0.25.2",
     "greenlet>=3.2.1",
+    "alembic>=1.13",
     "python-json-logger>=2.0.0",
     "cashu",
     "secp256k1",
