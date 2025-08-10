@@ -1,7 +1,6 @@
 import asyncio
-import os
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +13,7 @@ from ..wallet import periodic_payout
 from .admin import admin_router
 from .db import init_db, run_migrations
 from .logging import get_logger, setup_logging
+from .settings import SettingsManager
 
 # Initialize logging first
 setup_logging()
@@ -39,6 +39,10 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
         # Initialize database connection pools
         # This creates any tables that might not be tracked by migrations yet
         await init_db()
+
+        # Initialize settings from environment variables
+        logger.info("Initializing settings manager")
+        await SettingsManager.initialize()
 
         pricing_task = asyncio.create_task(update_sats_pricing())
         payout_task = asyncio.create_task(periodic_payout())
@@ -78,16 +82,16 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(
     version=__version__,
-    title=os.environ.get("NAME", "ARoutstrNode" + __version__),
-    description=os.environ.get("DESCRIPTION", "A Routstr Node"),
-    contact={"name": os.environ.get("NAME", ""), "npub": os.environ.get("NPUB", "")},
+    title="ARoutstrNode" + __version__,  # Default title
+    description="A Routstr Node",  # Default description
+    contact={"name": "", "npub": ""},  # Default contact
     lifespan=lifespan,
 )
 
-# Configure CORS
+# Middleware configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_origins=["*"],  # Default, will be updated from settings
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -96,16 +100,30 @@ app.add_middleware(
 
 @app.get("/", include_in_schema=False)
 @app.get("/v1/info")
-async def info() -> dict:
+async def get_info() -> dict[str, Any]:
+    """Get basic node information with settings from database."""
+    # Get settings from database
+    name = await SettingsManager.get("NAME", "ARoutstrNode" + __version__)
+    description = await SettingsManager.get("DESCRIPTION", "A Routstr Node")
+    npub = await SettingsManager.get("NPUB", "")
+    cashu_mints = await SettingsManager.get(
+        "CASHU_MINTS", "https://mint.minibits.cash/Bitcoin"
+    )
+    http_url = await SettingsManager.get("HTTP_URL", "")
+    onion_url = await SettingsManager.get("ONION_URL", "")
+
+    # Split cashu_mints by comma
+    mints_list = [mint.strip() for mint in cashu_mints.split(",") if mint.strip()]
+
     return {
-        "name": app.title,
-        "description": app.description,
+        "name": name,
+        "description": description,
         "version": __version__,
-        "npub": os.environ.get("NPUB", ""),
-        "mints": os.environ.get("CASHU_MINTS", "").split(","),
-        "http_url": os.environ.get("HTTP_URL", ""),
-        "onion_url": os.environ.get("ONION_URL", ""),
-        "models": MODELS,
+        "npub": npub,
+        "mints": mints_list,
+        "http_url": http_url,
+        "onion_url": onion_url,
+        "models": [model.dict() for model in MODELS],
     }
 
 

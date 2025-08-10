@@ -1,6 +1,5 @@
 import asyncio
 import json
-import os
 import random
 import string
 from typing import Any
@@ -8,6 +7,11 @@ from typing import Any
 import httpx
 import websockets
 from fastapi import APIRouter
+
+from .core.logging import get_logger
+from .core.settings import SettingsManager
+
+logger = get_logger(__name__)
 
 providers_router = APIRouter(prefix="/v1/providers")
 
@@ -157,8 +161,10 @@ async def fetch_provider_health(endpoint_url: str) -> dict[str, Any]:
         # Set up client arguments conditionally
         proxies = None
         if is_onion:
-            # Get Tor proxy URL from environment variable
-            tor_proxy = os.getenv("TOR_PROXY_URL", "socks5://127.0.0.1:9050")
+            # Get Tor proxy URL from settings
+            tor_proxy = await SettingsManager.get(
+                "TOR_PROXY_URL", "socks5://127.0.0.1:9050"
+            )
             proxies = {"http://": tor_proxy, "https://": tor_proxy}  # type: ignore[assignment]
 
         async with httpx.AsyncClient(

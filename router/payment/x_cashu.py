@@ -10,7 +10,7 @@ from ..core import get_logger
 from ..wallet import CurrencyUnit, recieve_token, send_token
 from .cost_caculation import CostData, CostDataError, MaxCostData, calculate_cost
 from .helpers import (
-    UPSTREAM_BASE_URL,
+    _get_upstream_base_url,
     create_error_response,
     get_max_cost_for_model,
     prepare_upstream_headers,
@@ -92,10 +92,12 @@ async def forward_to_upstream(
     request: Request, path: str, headers: dict, amount: int, unit: CurrencyUnit
 ) -> Response | StreamingResponse:
     """Forward request to upstream and handle the response."""
+    # Forward the request to the upstream API
     if path.startswith("v1/"):
         path = path.replace("v1/", "")
 
-    url = f"{UPSTREAM_BASE_URL}/{path}"
+    upstream_base_url = await _get_upstream_base_url()
+    url = f"{upstream_base_url}/{path}"
 
     logger.debug(
         "Forwarding request to upstream",
@@ -522,9 +524,9 @@ async def get_cost(response_data: dict) -> MaxCostData | CostData | None:
         extra={"model": model, "has_usage": "usage" in response_data},
     )
 
-    max_cost = get_max_cost_for_model(model=model)
+    max_cost = await get_max_cost_for_model(model=model)
 
-    match calculate_cost(response_data, max_cost):
+    match await calculate_cost(response_data, max_cost):
         case MaxCostData() as cost:
             logger.debug(
                 "Using max cost pricing",
@@ -561,6 +563,10 @@ async def get_cost(response_data: dict) -> MaxCostData | CostData | None:
                     }
                 },
             )
+        case _:
+            # Default case - should not happen
+            logger.error("Unexpected return type from calculate_cost")
+            return None
 
 
 async def send_refund(amount: int, unit: CurrencyUnit, mint: str | None = None) -> str:
