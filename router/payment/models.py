@@ -39,6 +39,8 @@ class TopProvider(BaseModel):
 class Model(BaseModel):
     id: str
     name: str
+    canonical_slug: str | None = None
+    provider: str | None
     created: int
     description: str
     context_length: int
@@ -170,6 +172,25 @@ async def update_sats_pricing() -> None:
             await asyncio.sleep(10)
         except asyncio.CancelledError:
             break
+
+
+def match_model_id_to_internal_model(model_id: str) -> Model | None:
+    """Match a model ID to an internal model."""
+    if not model_id:
+        return None
+
+    if "/" in model_id:
+        _, model_id = model_id.split("/")
+
+    for model in MODELS:
+        if model.id == model_id:
+            return model
+        if model.canonical_slug == model_id:
+            return model
+        if model_id in model.id:
+            return model
+
+    return None
 
 
 @models_router.get("/v1/models")

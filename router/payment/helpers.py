@@ -7,7 +7,7 @@ from fastapi import HTTPException, Response
 from ..core import get_logger
 from ..wallet import deserialize_token_from_string
 from .cost_caculation import COST_PER_REQUEST, MODEL_BASED_PRICING
-from .models import MODELS
+from .models import MODELS, Model
 
 logger = get_logger(__name__)
 
@@ -15,16 +15,18 @@ logger = get_logger(__name__)
 UPSTREAM_BASE_URL = os.environ.get("UPSTREAM_BASE_URL", "")
 UPSTREAM_API_KEY = os.environ.get("UPSTREAM_API_KEY", "")
 
-if not UPSTREAM_BASE_URL:
-    raise ValueError("Please set the UPSTREAM_BASE_URL environment variable")
+# Don't raise during import - check when actually used
+# if not UPSTREAM_BASE_URL:
+#     raise ValueError("Please set the UPSTREAM_BASE_URL environment variable")
 
 
-def get_cost_per_request(model: str | None = None) -> int:
+def get_cost_per_request(model: Model) -> int:
     """Get the cost per request for a given model."""
+
     logger.debug(
         "Calculating cost per request",
         extra={
-            "model": model,
+            "model_id": model.id,
             "model_based_pricing": MODEL_BASED_PRICING,
             "has_models": bool(MODELS),
         },
@@ -33,7 +35,7 @@ def get_cost_per_request(model: str | None = None) -> int:
     if MODEL_BASED_PRICING and MODELS and model:
         cost = get_max_cost_for_model(model=model)
         logger.debug(
-            "Using model-based cost", extra={"model": model, "cost_msats": cost}
+            "Using model-based cost", extra={"model_id": model.id, "cost_msats": cost}
         )
         return cost
 
@@ -111,12 +113,12 @@ def check_token_balance(headers: dict, body: dict, max_cost_for_model: int) -> N
         )
 
 
-def get_max_cost_for_model(model: str) -> int:
+def get_max_cost_for_model(model: Model) -> int:
     """Get the maximum cost for a specific model."""
     logger.debug(
         "Getting max cost for model",
         extra={
-            "model": model,
+            "model_id": model.id,
             "model_based_pricing": MODEL_BASED_PRICING,
             "has_models": bool(MODELS),
         },
@@ -125,15 +127,15 @@ def get_max_cost_for_model(model: str) -> int:
     if not MODEL_BASED_PRICING or not MODELS:
         logger.debug(
             "Using default cost (no model-based pricing)",
-            extra={"cost_msats": COST_PER_REQUEST, "model": model},
+            extra={"cost_msats": COST_PER_REQUEST, "model_id": model.id},
         )
         return COST_PER_REQUEST
 
-    if model not in [model.id for model in MODELS]:
+    if model.id not in [m.id for m in MODELS]:
         logger.warning(
             "Model not found in available models",
             extra={
-                "requested_model": model,
+                "requested_model_id": model.id,
                 "available_models": [m.id for m in MODELS],
                 "using_default_cost": COST_PER_REQUEST,
             },
@@ -141,17 +143,17 @@ def get_max_cost_for_model(model: str) -> int:
         return COST_PER_REQUEST
 
     for m in MODELS:
-        if m.id == model:
+        if m.id == model.id:
             max_cost = m.sats_pricing.max_cost * 1000  # type: ignore
             logger.debug(
                 "Found model-specific max cost",
-                extra={"model": model, "max_cost_msats": max_cost},
+                extra={"model_id": model.id, "max_cost_msats": max_cost},
             )
             return int(max_cost)
 
     logger.warning(
         "Model pricing not found, using default",
-        extra={"model": model, "default_cost_msats": COST_PER_REQUEST},
+        extra={"model_id": model.id, "default_cost_msats": COST_PER_REQUEST},
     )
     return COST_PER_REQUEST
 

@@ -64,6 +64,7 @@ def fetch_openrouter_models(source_filter: str | None = None) -> list[Model]:
                 model["id"] = model_id[len(source_prefix) :]
                 model_id = model["id"]
 
+            # Skip models with '(free)' in the name or id = 'openrouter/auto'
             if (
                 "(free)" in model.get("name", "")
                 or model_id == "openrouter/auto"
