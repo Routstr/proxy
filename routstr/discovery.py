@@ -24,14 +24,14 @@ async def query_nostr_relay_for_providers(
     timeout: int = 30,
 ) -> list[dict[str, Any]]:
     """
-    Query a Nostr relay for provider announcements using RIP-02 spec.
-    Searches for kind 31338 events (Routstr Provider Announcements).
+    Query a Nostr relay for provider announcements.
+    Searches for NIP-91 (kind:38421) events.
     """
     events = []
 
-    # Build filter according to RIP-02 spec
+    # Build filter for NIP-91 events
     filter_obj: dict[str, Any] = {
-        "kinds": [31338],  # RIP-02 Provider Announcement events
+        "kinds": [38421],  # NIP-91 Provider Announcements
         "limit": limit,
     }
 
@@ -44,12 +44,12 @@ async def query_nostr_relay_for_providers(
 
     try:
         async with websockets.connect(relay_url, timeout=timeout) as websocket:
-            print("Connected to relay, searching for kind 31338 events")
+            print("Connected to relay, searching for provider announcement events")
             await websocket.send(req_message)
 
             while True:
                 try:
-                    message = await asyncio.wait_for(websocket.recv(), timeout=5)
+                    message = await asyncio.wait_for(websocket.recv(), timeout=50)
                     data = json.loads(message)
 
                     if data[0] == "EVENT" and data[1] == sub_id:
@@ -80,61 +80,81 @@ async def query_nostr_relay_for_providers(
 
 def parse_provider_announcement(event: dict[str, Any]) -> dict[str, Any] | None:
     """
-    Parse a kind 31338 provider announcement event according to RIP-02 spec.
+    Parse provider announcement events.
+    Handles NIP-91 (kind:38421) format.
     Returns structured provider data or None if invalid.
     """
     try:
-        # Extract required tags according to RIP-02
         tags = event.get("tags", [])
+        kind = event.get("kind")
 
-        # Find required tags
-        endpoint_url = None
-        provider_name = None
+        # Common fields
         d_tag = None
-
-        for tag in tags:
-            if len(tag) >= 2:
-                if tag[0] == "endpoint":
-                    endpoint_url = tag[1]
-                elif tag[0] == "name":
-                    provider_name = tag[1]
-                elif tag[0] == "d":
-                    d_tag = tag[1]
-
-        # Validate required fields
-        if not endpoint_url or not provider_name or not d_tag:
-            print(
-                f"Invalid provider announcement - missing required tags: {event['id']}"
-            )
-            return None
-
-        # Extract optional tags
+        endpoint_urls = []
+        provider_name = None
         description = None
         contact = None
         pricing_url = None
         supported_models = []
+        mint_url = None
+        version = None
 
-        for tag in tags:
-            if len(tag) >= 2:
-                if tag[0] == "description":
-                    description = tag[1]
-                elif tag[0] == "contact":
-                    contact = tag[1]
-                elif tag[0] == "pricing":
-                    pricing_url = tag[1]
-                elif tag[0] == "model":
-                    supported_models.append(tag[1])
+        # Parse NIP-91 format
+        if kind == 38421:  # NIP-91 format
+            for tag in tags:
+                if len(tag) >= 2:
+                    if tag[0] == "d":
+                        d_tag = tag[1]
+                    elif tag[0] == "u":
+                        endpoint_urls.append(tag[1])
+                    elif tag[0] == "models" and len(tag) > 1:
+                        # NIP-91 uses single models tag with multiple values
+                        supported_models = tag[1:]
+                    elif tag[0] == "mint":
+                        mint_url = tag[1]
+                    elif tag[0] == "version":
+                        version = tag[1]
+
+            # Parse metadata from content for NIP-91
+            content = event.get("content", "")
+            if content:
+                try:
+                    metadata = json.loads(content)
+                    provider_name = metadata.get("name", "Unknown Provider")
+                    description = metadata.get("about")
+                    contact = metadata.get("contact")
+                except (json.JSONDecodeError, TypeError):
+                    provider_name = "Unknown Provider"
+            else:
+                provider_name = "Unknown Provider"
+
+            # Use first URL as primary endpoint
+            endpoint_url = endpoint_urls[0] if endpoint_urls else None
+
+            # Validate NIP-91 required fields
+            if not endpoint_url or not d_tag:
+                print(
+                    f"Invalid NIP-91 announcement - missing required fields: {event['id']}"
+                )
+                return None
+        else:
+            print(f"Unknown event kind: {kind}")
+            return None
 
         return {
             "id": event["id"],
             "pubkey": event["pubkey"],
             "created_at": event["created_at"],
+            "kind": kind,
             "d_tag": d_tag,
             "endpoint_url": endpoint_url,
+            "endpoint_urls": endpoint_urls,  # All URLs for NIP-91
             "name": provider_name,
             "description": description,
             "contact": contact,
             "pricing_url": pricing_url,
+            "mint_url": mint_url,
+            "version": version,
             "supported_models": supported_models,
             "content": event.get("content", ""),
         }
@@ -204,17 +224,20 @@ async def get_providers(
     include_json: bool = False, pubkey: str | None = None
 ) -> dict[str, list[dict[str, Any]]]:
     """
-    Discover Routstr providers using RIP-02 specification.
-    Searches for kind 31338 provider announcement events on Nostr relays.
+    Discover Routstr providers using NIP-91 specification.
+    Searches for provider announcement events on Nostr relays:
+    - kind:38421 (NIP-91)
 
-    Reference: https://github.com/Routstr/protocol/blob/main/RIP-02.md
+    References:
+    - NIP-91: https://github.com/nostr-protocol/nips/pull/1987
     """
     # Default relays for provider discovery
-    discovery_relays = [
-        "wss://relay.nostr.band",
-        "wss://relay.damus.io",
-        "wss://relay.routstr.com",
-    ]
+    # discovery_relays = [
+    #     "wss://relay.nostr.band",
+    #     "wss://relay.damus.io",
+    #     "wss://relay.routstr.com",
+    # ]
+    discovery_relays = os.getenv("RELAYS", "").split(",")
 
     all_events = []
     event_ids = set()  # To avoid duplicates
@@ -243,7 +266,7 @@ async def get_providers(
 
     print(f"Found {len(all_events)} total unique provider announcements")
 
-    # Parse provider announcements according to RIP-02
+    # Parse provider announcements according to NIP-91
     providers = []
     for event in all_events:
         parsed_provider = parse_provider_announcement(event)

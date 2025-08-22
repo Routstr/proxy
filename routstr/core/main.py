@@ -10,6 +10,7 @@ from starlette.exceptions import HTTPException
 
 from ..balance import balance_router, deprecated_wallet_router
 from ..discovery import providers_router
+from ..nip91 import announce_provider
 from ..payment.models import MODELS, models_router, update_sats_pricing
 from ..proxy import proxy_router
 from ..wallet import periodic_payout
@@ -32,6 +33,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
 
     pricing_task = None
     payout_task = None
+    nip91_task = None
 
     try:
         # Run database migrations on startup
@@ -46,6 +48,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
 
         pricing_task = asyncio.create_task(update_sats_pricing())
         payout_task = asyncio.create_task(periodic_payout())
+        nip91_task = asyncio.create_task(announce_provider())
 
         yield
 
@@ -62,6 +65,8 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
             pricing_task.cancel()
         if payout_task is not None:
             payout_task.cancel()
+        if nip91_task is not None:
+            nip91_task.cancel()
 
         try:
             tasks_to_wait = []
@@ -69,6 +74,8 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
                 tasks_to_wait.append(pricing_task)
             if payout_task is not None:
                 tasks_to_wait.append(payout_task)
+            if nip91_task is not None:
+                tasks_to_wait.append(nip91_task)
 
             if tasks_to_wait:
                 await asyncio.gather(*tasks_to_wait, return_exceptions=True)
