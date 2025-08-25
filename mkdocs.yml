@@ -1,0 +1,58 @@
+site_name: Routstr Core
+site_description: FastAPI-based payment proxy core for OpenAI-compatible APIs with Cashu eCash
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.instant
+    - content.code.copy
+    - content.tabs.link
+  palette:
+    - scheme: default
+      primary: blue
+      accent: indigo
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Configuration: configuration.md
+  - Architecture: architecture.md
+  - Usage: usage.md
+  - Operations: operations.md
+  - Providers: providers.md
+  - Testing: testing.md
+  - Contributing: contributing.md
+  - API Reference:
+      - Core: api/core.md
+      - App & Routers: api/app.md
+      - Payments: api/payment.md
+      - Auth & Proxy: api/auth_proxy.md
+  - Publishing Docs: publishing.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            show_signature: true
+            show_if_no_docstring: true
+            docstring_style: google
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - def_list
+  - tables
+  - codehilite
+
+extra:
+  social:
+    - icon: material/github
+      link: https://github.com/routstr
+      name: Routstr on GitHub

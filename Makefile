@@ -16,7 +16,7 @@ else
     ALEMBIC := alembic
 endif
 
-.PHONY: help setup test test-unit test-integration test-integration-docker test-all test-fast test-performance clean docker-up docker-down lint format type-check dev-setup check-deps db-upgrade db-downgrade db-current db-history db-migrate db-revision db-heads db-clean
+.PHONY: help setup test test-unit test-integration test-integration-docker test-all test-fast test-performance clean docker-up docker-down lint format type-check dev-setup check-deps db-upgrade db-downgrade db-current db-history db-migrate db-revision db-heads db-clean docs-serve docs-build docs-deploy
 
 # Default target
 help:
@@ -42,6 +42,11 @@ help:
 	@echo "  make create-migration   - Auto-generate new migration"
 	@echo "  make db-upgrade         - Apply all pending migrations"
 	@echo "  make db-downgrade       - Downgrade one migration"
+	@echo ""
+	@echo "Documentation:"
+	@echo "  make docs-serve         - Serve docs locally with live reload"
+	@echo "  make docs-build         - Build static docs site"
+	@echo "  make docs-deploy        - Build docs site (artifact only)"
 
 # First-time setup
 setup: check-deps dev-setup
@@ -124,7 +129,21 @@ dev-setup:
 	fi
 	uv sync --dev
 	uv pip install -e .
+	uv run mkdocs --version || true
 	@echo "✅ Development environment ready!"
+# Documentation
+docs-serve:
+	@echo "📚 Serving MkDocs at http://127.0.0.1:8001 ..."
+	uv run mkdocs serve -a 0.0.0.0:8001 | cat
+
+docs-build:
+	@echo "🏗️  Building MkDocs site..."
+	uv run mkdocs build --clean | cat
+	@echo "✅ Docs built to site/"
+
+docs-deploy:
+	@echo "🚀 Building docs site (ready to deploy)..."
+	uv run mkdocs build --clean | cat
 
 # Check dependencies
 check-deps:
